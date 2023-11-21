@@ -19,6 +19,8 @@ var side = 0;
 
 var moves = [];
 
+var pgn = [];
+
 var boardFen = [];
 
 var board = [];
@@ -32,8 +34,22 @@ var selectedSquare = -1;
 onLoaded();
 
 function onLoaded() {
+	document.querySelectorAll("input").forEach(function(input) {
+		const value = localStorage.getItem(input.id);
+		if (value == null) {
+			localStorage.setItem(input.id, input.value);
+		}
+		else {
+			input.value = value;
+		}
+		input.addEventListener("input", function(event) {
+			localStorage.setItem(input.id, input.value);
+		});
+		console.log(input.id);
+	});
 	generateBoard();
 	onUpdate();
+	onNewGameButtonClicked();
 }
 
 function onUpdate() {
@@ -94,7 +110,9 @@ function onSquareClicked(event) {
 
 function onNewGameButtonClicked() {
 	moves = [];
+	pgn = [];
 	side = document.getElementById("sideInput").value;
+	pgn.push(side == 1 ? "[White \"Engine\"]" : "[Black \"Engine\"]");
 	generateBoard();
 	onUpdate();
 }
@@ -102,8 +120,13 @@ function onNewGameButtonClicked() {
 function onUndoButtonClicked() {
 	if (moves.length >= 2) {
 		moves.length -= 2;
+		pgn.length -= 2;
 	}
 	onUpdate();
+}
+
+function onExportButtonClicked() {
+	navigator.clipboard.writeText(pgn.join(" "));
 }
 
 function generateBoard() {
@@ -112,7 +135,7 @@ function generateBoard() {
 	for (let i = 0; i < 8; i++) {
 		for (let j = 0; j < 8; j++) {
 			const squareElement = document.createElement("div");
-			squareElement.id = "square_" + (i * 8 + j);
+			squareElement.id = "square_" + makeSquare(i, j);
 			squareElement.classList.add("square");
 			squareElement.classList.add(i % 2 == j % 2 ? "light" : "dark");
 			squareElement.style.position = "absolute";
@@ -153,6 +176,7 @@ function playMove(src, dst) {
 	const move = formatMove(src, dst);
 	if (turn == side && legalMoves.includes(move)) {
 		moves.push(move);
+		pgn.push(moveToSan(move));
 		onUpdate();
 	}
 }
@@ -163,6 +187,7 @@ function playComputerMove() {
 	const maximumErrorValue = document.getElementById("maximumErrorInput").value;
 	const probabilityValue = document.getElementById("probabilityInput").value;
 	const depthValue = document.getElementById("depthInput").value;
+	const thinkingStartTime = performance.now();
 	stockfish.postMessage("setoption name Contempt value " + contemptValue);
 	stockfish.postMessage("setoption name Skill Level value " + skillLevelValue);
 	stockfish.postMessage("setoption name Skill Level Maximum Error value " + maximumErrorValue);
@@ -170,17 +195,42 @@ function playComputerMove() {
 	stockfish.postMessage("go depth " + depthValue);
 	stockfish.onmessage = function(event) {
 		if (event.includes("bestmove")) {
-			moves.push(event.split(" ")[1]);
+			const thinkingEndTime = performance.now();
+			const move = event.split(" ")[1];
+			console.log("computer thought for " + (thinkingEndTime - thinkingStartTime) + "ms");
+			moves.push(move);
+			pgn.push(moveToSan(move));
 			onUpdate();
 		}
 	};
 }
 
+function moveToSan(move) {
+	const [src, dst] = parseMove(move);
+	return board[src].toUpperCase() + move;
+}
+
+function parseMove(moveStr) {
+	const src = parseSquare(moveStr.substring(0, 2));
+	const dst = parseSquare(moveStr.substring(2, 4));
+	return [src, dst];
+}
+
+function parseSquare(squareStr) {
+	const file = squareStr.charCodeAt(0) - "a".charCodeAt();
+	const rank = "8".charCodeAt() - squareStr.charCodeAt(1);
+	return makeSquare(rank, file);
+}
+
 function formatMove(src, dst) {
 	const srcStr = String.fromCharCode("a".charCodeAt() + getSquareFile(src)) + String.fromCharCode("8".charCodeAt() - getSquareRank(src));
 	const dstStr = String.fromCharCode("a".charCodeAt() + getSquareFile(dst)) + String.fromCharCode("8".charCodeAt() - getSquareRank(dst));
-	const promotion = board[src] == "P" && getSquareRank(dst) == 0 || board[src] == "p" && getSquareRank(dst) == 7 ? "q" : "";
-	return srcStr + dstStr + promotion;
+	const promotionStr = board[src] == "P" && getSquareRank(dst) == 0 || board[src] == "p" && getSquareRank(dst) == 7 ? "q" : "";
+	return srcStr + dstStr + promotionStr;
+}
+
+function makeSquare(rank, file) {
+	return rank * 8 + file;
 }
 
 function getSquareRank(square) {
